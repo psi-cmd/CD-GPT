@@ -167,6 +167,7 @@ data/
 
 # Project specific
 lightning_logs/
+result/
 
 # Jupyter Notebook additional
 *.ipynb_checkpoints
