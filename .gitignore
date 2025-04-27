@@ -161,6 +161,29 @@ cython_debug/
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 .idea/
 assets/
-checkpoints/*.pth
-checkpoints/*.model
+checkpoints/
 tests/
+data/
+
+# Project specific
+lightning_logs/
+
+# Jupyter Notebook additional
+*.ipynb_checkpoints
+*.ipynb_checkpoints/
+*/.ipynb_checkpoints/*
+
+# Mac OS specific
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Large files
+*.tar.gz
+*.gz
+*.zip
+
+# VSCode
+.vscode/
+*.code-workspace

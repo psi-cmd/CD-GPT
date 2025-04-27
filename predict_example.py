@@ -47,7 +47,7 @@ def main(args):
 
     input_sequence = "KALTARQQEVFDLIRDHISQTGMPPTRAEIAQRLGFRSPNAAEEHLKALARKGVIEIVSGASRGIRLLQEE"
     
-    x = tokenizer.encode(input_sequence, eos=False, device=model.device) if output_head == 'sequence' else tokenizer.encode_token(input_sequence, eos=False, device=model.device)
+    x = tokenizer.encode(input_sequence, eos=False, device="cuda") if output_head == 'sequence' else tokenizer.encode_token(input_sequence, eos=False, device=model.device)
     x = x.unsqueeze(0)
     output = model(x)["output"]
     print(output)
