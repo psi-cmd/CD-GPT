@@ -9,9 +9,12 @@ import pytorch_lightning as pl
 from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
 import os
 import argparse
+import torch.multiprocessing as mp
 
 from tokenizer import SentencePieceTokenizer
 from model.finetune import CDGPTSequenceTaskHead
+
+mp.set_start_method('spawn', force=True)
 
 class CDGPTLightningModule(pl.LightningModule):
     def __init__(self, cfg):
@@ -115,12 +118,61 @@ class CDGPTLightningModule(pl.LightningModule):
         # 直接返回优化器和调度器列表
         return [optimizer], [warmup_scheduler, plateau_scheduler]
 
+def get_adaptive_batch_size(model_size="1b", memory_factor=1):
+    """根据GPU显存大小直接映射batch_size"""
+    if not torch.cuda.is_available():
+        print("CUDA不可用，使用默认batch_size: 32")
+        return 32
+    
+    # 获取GPU信息
+    device = torch.cuda.current_device()
+    gpu_properties = torch.cuda.get_device_properties(device)
+    total_memory = gpu_properties.total_memory / 1024 / 1024 / 1024  # 转换为GB
+    
+    # 针对不同型号GPU的batch_size映射（基于已知batch_size=320占用~24GB）
+    # 参考点：CD-GPT-1b模型，batch_size=320，占用约24GB显存
+    
+    # 创建显存范围到batch_size的映射（针对CD-GPT-1b模型）
+    memory_to_bs_1b = {
+        (0, 24): 256,     # <=24GB显存
+        (24, 32): 384,    # 24-32GB显存
+        (32, 48): 512,    # 32-48GB显存
+        (48, 64): 768,    # 48-64GB显存
+        (64, 96): 1024,   # 64-96GB显存
+        (96, float('inf')): 1536  # >96GB显存
+    }
+    
+    # 针对其他模型大小的调整因子
+    model_size_factors = {
+        "small": 4.0,    # small模型能用更大batch_size
+        "base": 2.0,     # base模型能用更大batch_size
+        "1b": 1.0,       # 参考点
+        "7b": 0.15       # 7B模型需要更小batch_size
+    }
+    
+    # 获取模型调整因子
+    model_factor = model_size_factors.get(model_size, 1.0)
+    
+    # 根据显存和模型大小选择合适的batch_size
+    batch_size = None
+    for (min_mem, max_mem), bs in memory_to_bs_1b.items():
+        if min_mem <= total_memory < max_mem:
+            batch_size = int(bs * model_factor * memory_factor)
+            break
+    
+    print(f"GPU: {gpu_properties.name}, 显存: {total_memory:.1f}GB")
+    print(f"模型大小: {model_size}, 调整因子: {model_factor}, 内存利用率: {memory_factor}")
+    print(f"自适应计算的batch_size: {batch_size}")
+    
+    return batch_size
+
 def parse_args():
     parser = argparse.ArgumentParser(description='CD-GPT Fine-tuning')
     
     # 训练相关参数
     parser.add_argument('--epochs', type=int, default=30, help='训练轮数')
-    parser.add_argument('--batch_size', type=int, default=320, help='批量大小')
+    parser.add_argument('--batch_size', type=int, default=0, help='批量大小（0表示自动计算）')
+    parser.add_argument('--memory_factor', type=float, default=0.8, help='显存利用率因子(0-1)')
     parser.add_argument('--learning_rate', type=float, default=1e-4, help='学习率')
     parser.add_argument('--model_size', type=str, default='1b', help='模型大小')
     parser.add_argument('--seed', type=int, default=42, help='随机种子')
@@ -146,7 +198,14 @@ def main():
     cfg.tokenizer.path = os.path.join(args.checkpoint_dir, "tokenizer.model")
     cfg.model_path = os.path.join(args.checkpoint_dir, f"CD-GPT-{args.model_size}.pth")
     cfg.train_data_path = args.data_dir
-    cfg.batch_size = args.batch_size
+    
+    # 自适应计算batch_size
+    if args.batch_size <= 0:
+        cfg.batch_size = get_adaptive_batch_size(args.model_size, args.memory_factor)
+    else:
+        cfg.batch_size = args.batch_size
+        print(f"使用指定的batch_size: {cfg.batch_size}")
+    
     cfg.num_epochs = args.epochs
     cfg.learning_rate = args.learning_rate
     cfg.max_length = args.max_length
@@ -198,7 +257,7 @@ def main():
         ModelCheckpoint(
             monitor='val_r2',
             dirpath=args.output_dir,
-            filename='best-model-{epoch:02d}-{val_r2:.2f}',
+            filename=f'best-model-bs{cfg.batch_size}-{{epoch:02d}}-{{val_r2:.2f}}',
             save_top_k=1,
             mode='max'
         ),

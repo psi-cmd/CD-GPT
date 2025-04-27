@@ -14,29 +14,29 @@ function rtlog(){
 ########################
 # 需要的命令行参数：
 # 1: EPOCHS (训练轮数)
-# 2: BATCH_SIZE (批量大小)
+# 2: MEMORY_FACTOR (显存利用率，0-1之间)
 # 3: LEARNING_RATE (学习率)
 # 4: MODEL_SIZE (模型大小，例如small/base/large)
 # 5: SEED (随机种子)
 
 EPOCHS=${1:-20}
-BATCH_SIZE=${2:-320}
+MEMORY_FACTOR=${2:-1}
 LEARNING_RATE=${3:-1e-4}
 MODEL_SIZE=${4:-1b}
 SEED=${5:-42}
-MAX_LENGTH=${6:-100}
+MAX_LENGTH=${6:-50}
 NUM_WORKERS=${7:-8}
 
 echo "Parameters:"
 echo "EPOCHS: $EPOCHS"
-echo "BATCH_SIZE: $BATCH_SIZE"
+echo "MEMORY_FACTOR: $MEMORY_FACTOR"
 echo "LEARNING_RATE: $LEARNING_RATE"
 echo "MODEL_SIZE: $MODEL_SIZE"
 echo "SEED: $SEED"
 echo "MAX_LENGTH: $MAX_LENGTH"
 echo "NUM_WORKERS: $NUM_WORKERS"
 
-MODELNAME=cdgpt_${MODEL_SIZE}_bs${BATCH_SIZE}_lr${LEARNING_RATE}_e${EPOCHS}_s${SEED}_${RANDOM}
+MODELNAME=cdgpt_${MODEL_SIZE}_mf${MEMORY_FACTOR}_lr${LEARNING_RATE}_e${EPOCHS}_s${SEED}_${RANDOM}
 
 rtlog "Training+start"
 
@@ -87,7 +87,8 @@ ln -s /staging/${USERNAME}/checkpoints ./checkpoints
 # 开始训练，使用命令行参数
 python -u finetune_CDGPT.py \
   --epochs $EPOCHS \
-  --batch_size $BATCH_SIZE \
+  --batch_size 0 \
+  --memory_factor $MEMORY_FACTOR \
   --learning_rate $LEARNING_RATE \
   --model_size $MODEL_SIZE \
   --seed $SEED \
