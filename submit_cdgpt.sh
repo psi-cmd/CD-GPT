@@ -3,7 +3,7 @@
 ########################
 #  EXPORT ENVIRONMENT  #
 ########################
-USERNAME=psi-cmd
+USERNAME=lliu466
 NCORES=32
 function rtlog(){
   curl "https://api.day.app/YOUR_APP_KEY/CD-GPT/$1"
