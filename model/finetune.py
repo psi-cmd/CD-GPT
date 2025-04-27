@@ -4,7 +4,7 @@ import torch.nn as nn
 
 from model.output_head import SequencePredictionHead
 from .cd_gpt import CDGPT
-from .layer import CasualSelfAttention
+from .layer import CasualSelfAttention, apply_rotary_emb
 import math
 
     
@@ -16,12 +16,12 @@ class LoRASelfAttention(CasualSelfAttention):
         self.scaling = alpha / rank
         
         # 初始化 LoRA 参数
-        self.lora_q_A = nn.Parameter(torch.zeros(rank, self.head_dim))
-        self.lora_q_B = nn.Parameter(torch.zeros(self.head_dim, rank))
-        self.lora_k_A = nn.Parameter(torch.zeros(rank, self.head_dim))
-        self.lora_k_B = nn.Parameter(torch.zeros(self.head_dim, rank))
-        self.lora_v_A = nn.Parameter(torch.zeros(rank, self.head_dim))
-        self.lora_v_B = nn.Parameter(torch.zeros(self.head_dim, rank))
+        self.lora_q_A = nn.Parameter(torch.zeros(rank, self.dim))
+        self.lora_q_B = nn.Parameter(torch.zeros(self.dim, rank))
+        self.lora_k_A = nn.Parameter(torch.zeros(rank, self.dim))
+        self.lora_k_B = nn.Parameter(torch.zeros(self.dim, rank))
+        self.lora_v_A = nn.Parameter(torch.zeros(rank, self.dim))
+        self.lora_v_B = nn.Parameter(torch.zeros(self.dim, rank))
         
         # 初始化 LoRA 参数
         nn.init.kaiming_uniform_(self.lora_q_A, a=math.sqrt(5))
@@ -32,13 +32,31 @@ class LoRASelfAttention(CasualSelfAttention):
         nn.init.zeros_(self.lora_v_B)
 
     def _project_qkv(self, x: torch.Tensor, rope: torch.Tensor):
-        q, k, v = super()._project_qkv(x, rope)
+        B, T, C = x.size()
         
-        # 应用 LoRA 到 Q, K, V
-        q = q + (q @ self.lora_q_A.T @ self.lora_q_B.T) * self.scaling
-        k = k + (k @ self.lora_k_A.T @ self.lora_k_B.T) * self.scaling
-        v = v + (v @ self.lora_v_A.T @ self.lora_v_B.T) * self.scaling
-
+        # 原始投影
+        qkv = self.c_attn(x)
+        
+        # LoRA 适配
+        lora_qkv = torch.cat([
+            (x @ self.lora_q_A.T @ self.lora_q_B.T),
+            (x @ self.lora_k_A.T @ self.lora_k_B.T),
+            (x @ self.lora_v_A.T @ self.lora_v_B.T)
+        ], dim=2) * self.scaling
+        
+        # 合并
+        qkv = qkv + lora_qkv
+        q, k, v = qkv.split(self.dim, dim=2)
+        
+        # 变形和应用 RoPE
+        q = q.view(B, T, self.num_heads, self.head_dim)
+        k = k.view(B, T, self.num_heads, self.head_dim)
+        v = v.view(B, T, self.num_heads, self.head_dim)
+        
+        q = apply_rotary_emb(q, rope).transpose(1, 2)
+        k = apply_rotary_emb(k, rope).transpose(1, 2)
+        v = v.transpose(1, 2)
+        
         return q, k, v
 
 class Adapter(nn.Module):
