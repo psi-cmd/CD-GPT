@@ -45,9 +45,9 @@ rtlog "Training+start"
 ########################
 MEMDIR=/dev/shm/
 cp /staging/${USERNAME}/cdgpt_env.tar.gz $MEMDIR/
-mkdir $MEMDIR/conda_env
-ln -s $MEMDIR/conda_env ./conda_env
-pigz -p $NCORES -dc $MEMDIR/cdgpt_env.tar.gz | tar xf - -C ./conda_env
+mkdir -p $MEMDIR/env_extract
+pigz -p $NCORES -dc $MEMDIR/cdgpt_env.tar.gz | tar xf - -C $MEMDIR/env_extract
+ln -s $MEMDIR/env_extract/cdgpt ./conda_env
 
 rtlog "Env+Decompressed"
 
