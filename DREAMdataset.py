@@ -3,6 +3,62 @@ import numpy as np
 from torch.utils.data import Dataset
 import pandas as pd
 from sklearn.model_selection import train_test_split
+from itertools import product
+
+
+def build_mapping():
+    TF_Ids = ['Cebpb', 'Egr2', 'Esr1', 'Foxj2', 'Foxo1', 'Foxo3', 'Foxo4',
+       'Foxp1', 'Foxp2', 'Gmeb2', 'Irf2', 'Junb', 'Mecp2', 'Nr2c1',
+       'Pou3f1', 'Sox14', 'Sp1', 'Tbx3', 'Tcf3', 'Zscan20']
+    
+    more_TF_Ids = ['TF_1', 'TF_2', 'TF_3', 'TF_4', 'TF_5', 'TF_6', 'TF_7', 'TF_8',
+       'TF_9', 'TF_10', 'TF_11', 'TF_12', 'TF_13', 'TF_14', 'TF_15',
+       'TF_16', 'TF_17', 'TF_18', 'TF_19', 'TF_20', 'TF_21', 'TF_22',
+       'TF_23', 'TF_24', 'TF_25', 'TF_26', 'TF_27', 'TF_28', 'TF_29',
+       'TF_30', 'TF_31', 'TF_32', 'TF_33', 'TF_34', 'TF_35', 'TF_36',
+       'TF_37', 'TF_38', 'TF_39', 'TF_40', 'TF_41', 'TF_42', 'TF_43',
+       'TF_44', 'TF_45', 'TF_46', 'TF_47', 'TF_48', 'TF_49', 'TF_50',
+       'TF_51', 'TF_52', 'TF_53', 'TF_54', 'TF_55', 'TF_56', 'TF_57',
+       'TF_58', 'TF_59', 'TF_60', 'TF_61', 'TF_62', 'TF_63', 'TF_64',
+       'TF_65', 'TF_66']
+    
+    TF_Ids = TF_Ids + more_TF_Ids
+    
+    ArrayTypes = ["HK", "ME"]
+    single_chars = [
+        'V', 'R', 'MYR', 'MYL', 'MYG', 'MY', 'MWR', 'MWL', 'MWG', 'MW', 'MVV', 
+        'MVR', 'MVQ', 'MVM', 'MVL', 'MVK', 'MVI', 'MVH', 'MVG', 'MVF', 'MVD', 
+        'MVC', 'MV', 'MTV', 'MTT', 'MTSS', 'MTSP', 'MTSL', 'MTR', 'MTQ', 'MTP',
+        'MTN', 'MTM', 'MTL', 'MTK', 'MTI', 'MTH', 'MTG', 'MTF', 'MTE', 'MTD',
+        'MTC', 'MTA', 'MSY', 'MSW', 'MSV', 'MSTV', 'MSTL', 'MST', 'MSSL', 'MSSG',
+        'MSS', 'MSRL', 'MSR', 'MSQ', 'MSP', 'MSN', 'MSM', 'MSLL', 'MSL', 'MSKL',
+        'MSK', 'MSI', 'MSH', 'MSGL', 'MSGG', 'MSG', 'MSF', 'MSEL', 'MSEK', 'MSEE',
+        'MSE', 'MSD', 'MSC', 'MSAL', 'MSA', 'MRV', 'MRR', 'MRQ', 'MRN', 'MRM',
+        'MRLL', 'MRL', 'MRK', 'MRI', 'MRH', 'MRG', 'MRF', 'MRD', 'MRC', 'MR',
+        'MQV', 'MQR', 'MQQ', 'MQL', 'MQK', 'MQG', 'MQF', 'MQD', 'MQ', 'MPY',
+        'MPV', 'MPT', 'MPR', 'MPQ', 'MPP', 'MPN', 'MPM', 'MPL', 'MPK', 'MPI',
+        'MPH', 'MPG', 'MPF', 'MPE', 'MPD', 'MPA', 'MNY', 'MNV', 'MNT', 'MNR',
+        'MNQ', 'MNP', 'MNN', 'MNM', 'MNL', 'MNK', 'MNI', 'MNH', 'MNG', 'MNF',
+        'MND', 'MNC', 'MN', 'MMV', 'MMR', 'MMQ', 'MML', 'MMK', 'MMG', 'MMD',
+        'MM', 'MLV', 'MLR', 'MLLL', 'MLL', 'MLK', 'MLG', 'MLC', 'ML', 'MKY',
+        'MKV', 'MKR', 'MKQ', 'MKN', 'MKM', 'MKLL', 'MKL', 'MKK', 'MKI', 'MKH',
+        'MKG', 'MKF', 'MKD', 'MKC', 'MK', 'MIV', 'MIR', 'MIQ', 'MIN', 'MIL', 'MIK'
+    ]
+    mapping = {k: v for k, v in zip(product(TF_Ids, ArrayTypes), single_chars)}
+    return mapping
+
+_mapping = build_mapping()
+
+def TF_ArrayType_to_small_token(TF_Id, ArrayType):
+    """should minimize the token length, so map combination of TF_Id and ArrayType to a small token"""
+    if (TF_Id, ArrayType) in _mapping:
+        return _mapping[(TF_Id, ArrayType)]
+    else:
+        import pickle
+        pickle.dump(_mapping, open("mapping.pkl", "wb"))
+        pickle.dump(TF_Id, open("TF_Id.pkl", "wb"))
+        pickle.dump(ArrayType, open("ArrayType.pkl", "wb"))
+        raise ValueError(f"TF_Id: {TF_Id}, ArrayType: {ArrayType} is not in the allowed list")
 
 def load_and_process_data(data_paths: list[str], train_ratio=0.7, val_ratio=0.15, tokenizer=None):
     """
@@ -114,7 +170,7 @@ class DREAMDataset(Dataset):
             TF_Id = row['TF_Id']
             array_type = row['ArrayType']
             sequence = row['Sequence'][:35]    
-            text = f"<{TF_Id}><{array_type}>{sequence}"
+            text = f"{TF_ArrayType_to_small_token(TF_Id, array_type)}{sequence}"
             
             # 使用校正后的信号值作为标签
             label = row['normalized_signal'].astype(np.float32)
