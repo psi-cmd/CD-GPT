@@ -1,0 +1,54 @@
+# gpu-lab.sub
+# sample submit file for GPU Lab jobs
+
+executable = submit_cdgpt.sh
+#change universe accordingly
+#if using docker, no need to install any software
+#if using vanilla, prepare a package file in "tar.gz" that contains your software (e.g.: conda package)
+universe = vanilla
+#check docker website to find the software you want to use
+#docker_image = msoconnor2/gmx2022.5_plumed_mpi_v2
+
+#this will transfer all your files in the current folder to the working folder
+transfer_input_files = ./
+
+log = job_$(Cluster)_$(Process).log
+error = job_$(Cluster)_$(Process).err
+output = job_$(Cluster)_$(Process).out
+
+# Fill in with whatever executable you're using
+# executable = submit_transformer_x_plateau_seed0.sh
+
+should_transfer_files = YES
+when_to_transfer_output = ON_EXIT_OR_EVICT
+
+# Uncomment and add input files that are in /home
+# Uncomment according to the machine you want to use:
+#1. uncomment the next two lines to use A100GPU-80GB
+# requirements = (OpSysMajorVer == 8)
+# require_gpus = (Capability == 8.0)
+##
+#1. Uncomment the next two lines to use either A100GPU-80GB or A100GPU-40GB, your job may start faster since the requirement is more relaxed.
+requirements = (OpSysMajorVer >= 7)
+require_gpus = (Capability >= 8.0)
+#
+#2. uncomment the next two lines to use A100GPU-40GB
+#requirements = (OpSysMajorVer == 7)
+#require_gpus = (Capability == 8.0)
+#3. uncomment the next line to use xhuanggpu4000
+#requirements = (Machine == "xhuanggpu4001.chtc.wisc.edu")
++WantFlock = true
++WantGPULab = true
+#4. uncomment the next line to use L40GPU
+#require_gpus = (Capability == 8.90)
+#Choose according to the length of your job, time limit for "short" is for 12 hours, "medium" is 24 hours, "long" job is 7 days (for xhuanggpu, it's only 72 hours).
+#There is a limit for the number of GPU you can use for each type of job to run at the same time.
+#e.g.: you can only use 4 GPUs at the same time for long jobs (e.g.: 4 x 1GPU long jobs or 1 x 4GPU long jobs, etc). check chtc website.
+#j+GPUJobLength = "long"
+#uncomment the next line to run 7-day job with xhuanggpu4000
+#+LongJob = true
+request_gpus = 1
+request_cpus = 32
+request_memory = 64GB
+request_disk = 60GB
+queue 1
