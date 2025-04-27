@@ -15,28 +15,33 @@ function rtlog(){
 # 需要的命令行参数：
 # 1: EPOCHS (训练轮数)
 # 2: MEMORY_FACTOR (显存利用率，0-1之间)
-# 3: LEARNING_RATE (学习率)
-# 4: MODEL_SIZE (模型大小，例如small/base/large)
-# 5: SEED (随机种子)
+# 3: LR_LORA (LoRA学习率)
+# 4: LR_ADAPTER (Adapter学习率) 
+# 5: PEFT_RANK (LoRA秩)
+# 6: MODEL_SIZE (模型大小，例如small/base/large)
+# 7: SEED (随机种子)
+# 8: NUM_WORKERS (数据加载线程数)
 
 EPOCHS=${1:-20}
 MEMORY_FACTOR=${2:-1}
-LEARNING_RATE=${3:-1e-4}
-MODEL_SIZE=${4:-1b}
-SEED=${5:-42}
-MAX_LENGTH=${6:-50}
-NUM_WORKERS=${7:-8}
+LR_LORA=${3:-1e-4}
+LR_ADAPTER=${4:-2e-5}
+PEFT_RANK=${5:-16}
+MODEL_SIZE=${6:-1b}
+SEED=${7:-42}
+NUM_WORKERS=${8:-8}
 
 echo "Parameters:"
 echo "EPOCHS: $EPOCHS"
 echo "MEMORY_FACTOR: $MEMORY_FACTOR"
-echo "LEARNING_RATE: $LEARNING_RATE"
+echo "LR_LORA: $LR_LORA"
+echo "LR_ADAPTER: $LR_ADAPTER"
+echo "PEFT_RANK: $PEFT_RANK"
 echo "MODEL_SIZE: $MODEL_SIZE"
 echo "SEED: $SEED"
-echo "MAX_LENGTH: $MAX_LENGTH"
 echo "NUM_WORKERS: $NUM_WORKERS"
 
-MODELNAME=cdgpt_${MODEL_SIZE}_mf${MEMORY_FACTOR}_lr${LEARNING_RATE}_e${EPOCHS}_s${SEED}_${RANDOM}
+MODELNAME=cdgpt_${MODEL_SIZE}_mf${MEMORY_FACTOR}_lora${LR_LORA}_adp${LR_ADAPTER}_r${PEFT_RANK}_e${EPOCHS}_s${SEED}_${RANDOM}
 
 rtlog "Training+start"
 
@@ -89,10 +94,11 @@ python -u finetune_CDGPT.py \
   --epochs $EPOCHS \
   --batch_size 0 \
   --memory_factor $MEMORY_FACTOR \
-  --learning_rate $LEARNING_RATE \
+  --lr_lora $LR_LORA \
+  --lr_adapter $LR_ADAPTER \
+  --peft_rank $PEFT_RANK \
   --model_size $MODEL_SIZE \
   --seed $SEED \
-  --max_length $MAX_LENGTH \
   --num_workers $NUM_WORKERS \
   --data_dir $DATA_DIR \
   --output_dir ./result/${MODELNAME} \
