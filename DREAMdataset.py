@@ -146,7 +146,7 @@ class DREAMDataset(Dataset):
         self._data = data.reset_index(drop=True)
         self.tokenizer = tokenizer
         self.max_length = max_length
-        self.device = device
+        self.device = "cpu"  # lightning will move the data to the correct device
 
     def __len__(self):
         """
@@ -212,13 +212,10 @@ class DREAMDataset(Dataset):
         attention_mask_4d = torch.zeros(batch_size, 1, seq_len, seq_len, device=self.device)
 
         for i in range(batch_size):
-            sample_mask = attention_mask_2d[i]
-            causal_mask = torch.tril(torch.ones(seq_len, seq_len, device=self.device))
-
-            valid_tokens = sample_mask.bool()
-            causal_mask = causal_mask * valid_tokens.unsqueeze(0) * valid_tokens.unsqueeze(1)
-
-            attention_mask_4d[i, 0, :seq_len, :seq_len] = causal_mask
+            sample_mask = attention_mask_2d[i].bool()
+            causal_mask = torch.tril(torch.ones((seq_len, seq_len), dtype=torch.bool, device=self.device))
+            combined_mask = causal_mask & sample_mask.unsqueeze(0) & sample_mask.unsqueeze(1)
+            attention_mask_4d[i, 0, :seq_len, :seq_len] = combined_mask
 
         return {
             'input_ids': torch.stack(batch_encodings),

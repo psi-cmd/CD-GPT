@@ -236,7 +236,6 @@ class SequencePositiveOutputHead(nn.Module):
 
         self.out_proj = nn.Sequential(
             nn.Linear(dim, 1),
-            nn.Softplus()
         )
 
     def forward(self, features):
