@@ -72,37 +72,40 @@ def load_and_process_data(data_paths: list[str], train_ratio=0.7, val_ratio=0.15
     Returns:
         tuple: Train, validation and test DataFrames
     """
-    # 加载并合并所有数据文件
+    # Load and merge all data files
     dfs = [pd.read_csv(path, sep='\t') for path in data_paths]
     df = pd.concat(dfs, ignore_index=True)
     print(f"{df.shape} data in total.")
     
-    # 计算探针偏差（所有TF的平均信号强度）
-    # 创建一个探针ID（可以是序列本身作为唯一标识符）
+    # Calculate probe bias (average signal strength across all TFs)
+    # Create a probe ID (can be the sequence itself as a unique identifier)
     df['probe_id'] = df['Sequence']
     
-    # 计算每个探针在所有TF中的平均信号强度（预期信号）
+    # Calculate the average signal strength for each probe across all TFs (expected signal)
     probe_bias = df.groupby('probe_id')['Signal_Mean'].mean().reset_index()
     probe_bias.columns = ['probe_id', 'expected_signal']
     
-    # 将偏差信息合并回主数据框
+    # Merge bias information back to the main dataframe
     df = pd.merge(df, probe_bias, on='probe_id', how='left')
     
-    # 计算校正后的信号值：原始信号除以预期信号，并进行log2变换
-    # 避免零除和log(0)问题
-    epsilon = 1e-10  # 小的正数防止除零
+    # Calculate corrected signal values: original signal divided by expected signal, with log2 transformation
+    # Avoid division by zero and log(0) problems
+    epsilon = 1e-10  # Small positive number to prevent division by zero
     df['corrected_signal'] = np.log2((df['Signal_Mean'] + epsilon) / (df['expected_signal'] + epsilon))
     
-    # 使用校正后的信号作为标签
+    # Use corrected signal as label
     df['normalized_signal'] = df['corrected_signal']
-    
-    # 根据TF_Id和ArrayType分组进行分层采样
+
+    if train_ratio == 1:
+        df = df[df['TF_Id'] == 'Sp1']
+        return DREAMDataset(df, tokenizer=tokenizer), None, None
+    # According to TF_Id and ArrayType group for stratified sampling
     train_dfs = []
     val_dfs = []
     test_dfs = []
     
     for (tf_id, array_type), group in df.groupby(['TF_Id', 'ArrayType']):
-        # 首先分出训练集
+        # First split the training set
         try:
             train_group, temp_group = train_test_split(
                 group, 
@@ -113,8 +116,8 @@ def load_and_process_data(data_paths: list[str], train_ratio=0.7, val_ratio=0.15
             print(f"TF_Id: {tf_id}, ArrayType: {array_type} has less than 10 samples, skipped")
             continue
         
-        # 从剩余数据中分出验证集和测试集
-        val_size = val_ratio / (1 - train_ratio)  # 调整验证集比例
+        # Split the remaining data into validation and test sets
+        val_size = val_ratio / (1 - train_ratio)  # Adjust validation set ratio
         val_group, test_group = train_test_split(
             temp_group,
             train_size=val_size,
@@ -125,7 +128,7 @@ def load_and_process_data(data_paths: list[str], train_ratio=0.7, val_ratio=0.15
         val_dfs.append(val_group)
         test_dfs.append(test_group)
         
-    # 创建数据集对象
+    # Create dataset objects
     train_dataset = DREAMDataset(pd.concat(train_dfs), tokenizer=tokenizer)
     val_dataset = DREAMDataset(pd.concat(val_dfs), tokenizer=tokenizer) 
     test_dataset = DREAMDataset(pd.concat(test_dfs), tokenizer=tokenizer)
@@ -165,14 +168,14 @@ class DREAMDataset(Dataset):
             tuple: Tuple containing input tensor and label.
         """
         try:
-            assert isinstance(idx, int), f"idx 必须是 int 类型，但收到 {type(idx)}"
+            assert isinstance(idx, int), f"idx must be of type int, but received {type(idx)}"
             row = self._data.iloc[idx]
             TF_Id = row['TF_Id']
             array_type = row['ArrayType']
             sequence = row['Sequence'][:35]    
             text = f"{TF_ArrayType_to_small_token(TF_Id, array_type)}{sequence}"
             
-            # 使用校正后的信号值作为标签
+            # Use corrected signal value as label
             label = row['normalized_signal'].astype(np.float32)
         except Exception as e:
             print(f"Type of idx: {type(idx)}")
@@ -184,7 +187,7 @@ class DREAMDataset(Dataset):
         return encoding, mask, label
     
     def collate_fn(self, batch):
-        # 找到当前batch中最长的序列长度
+        # Find the longest sequence length in the current batch
         max_len = max(len(seq) for seq, _, _ in batch)
         
         batch_encodings = []
@@ -195,10 +198,10 @@ class DREAMDataset(Dataset):
             cur_len = len(seq)
             if cur_len < max_len:
                 pad_length = max_len - cur_len
-                # 对encoding进行padding
+                # Pad encoding
                 padding = torch.full((pad_length,), self.tokenizer.pad, dtype=seq.dtype, device=seq.device)
                 seq = torch.cat([seq, padding])
-                # 对mask进行padding，padding部分为0，表示不关注这些位置
+                # Pad mask, padding parts are 0, indicating not to pay attention to these positions
                 mask_padding = torch.zeros(pad_length, dtype=mask.dtype, device=mask.device)
                 mask = torch.cat([mask, mask_padding])
             

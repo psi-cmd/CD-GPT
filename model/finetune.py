@@ -15,7 +15,7 @@ class LoRASelfAttention(CasualSelfAttention):
         self.alpha = alpha
         self.scaling = alpha / rank
         
-        # 初始化 LoRA 参数
+        # Initialize LoRA parameters
         self.lora_q_A = nn.Parameter(torch.zeros(rank, self.dim))
         self.lora_q_B = nn.Parameter(torch.zeros(self.dim, rank))
         self.lora_k_A = nn.Parameter(torch.zeros(rank, self.dim))
@@ -23,7 +23,7 @@ class LoRASelfAttention(CasualSelfAttention):
         self.lora_v_A = nn.Parameter(torch.zeros(rank, self.dim))
         self.lora_v_B = nn.Parameter(torch.zeros(self.dim, rank))
         
-        # 初始化 LoRA 参数
+        # Initialize LoRA parameters
         nn.init.kaiming_uniform_(self.lora_q_A, a=math.sqrt(5))
         nn.init.zeros_(self.lora_q_B)
         nn.init.kaiming_uniform_(self.lora_k_A, a=math.sqrt(5))
@@ -34,21 +34,21 @@ class LoRASelfAttention(CasualSelfAttention):
     def _project_qkv(self, x: torch.Tensor, rope: torch.Tensor):
         B, T, C = x.size()
         
-        # 原始投影
+        # Original projection
         qkv = self.c_attn(x)
         
-        # LoRA 适配
+        # LoRA adaptation
         lora_qkv = torch.cat([
             (x @ self.lora_q_A.T @ self.lora_q_B.T),
             (x @ self.lora_k_A.T @ self.lora_k_B.T),
             (x @ self.lora_v_A.T @ self.lora_v_B.T)
         ], dim=2) * self.scaling
         
-        # 合并
+        # Merge
         qkv = qkv + lora_qkv
         q, k, v = qkv.split(self.dim, dim=2)
         
-        # 变形和应用 RoPE
+        # Reshape and apply RoPE
         q = q.view(B, T, self.num_heads, self.head_dim)
         k = k.view(B, T, self.num_heads, self.head_dim)
         v = v.view(B, T, self.num_heads, self.head_dim)
@@ -92,23 +92,23 @@ class CDGPTFineTune(CDGPT):
         self.use_adapter = use_adapter
         
         if use_lora:
-            # 替换注意力层的 Q,K,V 投影为 LoRA 版本
+            # Replace attention layer Q,K,V projections with LoRA versions
             for block in self.transformer.h:
-                # 替换 query, key, value 投影
+                # Replace query, key, value projections
                 block.attn = LoRASelfAttention(self.embedding_dim, self.num_heads, self.max_len)
         
         if use_adapter:
-            # 在每个 transformer 块后添加 Adapter
+            # Add Adapter after each transformer block
             self.adapters = nn.ModuleList([
                 Adapter(self.embedding_dim) 
                 for _ in range(cfg.model.num_layers)
             ])
         
-        # 冻结原始模型参数
+        # Freeze original model parameters
         for param in self.parameters():
             param.requires_grad = False
             
-        # 解冻 LoRA 和 Adapter 参数
+        # Unfreeze LoRA and Adapter parameters
         if use_lora:
             for block in self.transformer.h:
                 block.attn.lora_q_A.requires_grad = True
@@ -246,6 +246,6 @@ class SequencePositiveOutputHead(nn.Module):
         x = torch.tanh(x)
         x = self.dropout(x)
         x = self.out_proj(x)
-        # 压缩维度，从[batch_size, 1]到[batch_size]
+        # Compress dimensions from [batch_size, 1] to [batch_size]
         x = x.squeeze(-1)
         return x

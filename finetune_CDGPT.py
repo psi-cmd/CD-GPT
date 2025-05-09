@@ -1,12 +1,9 @@
 # -*- coding: utf-8 -*-
-"""Fine‑tune CD‑GPT with **rsLoRA + Gated Adapter** (Hybrid‑PEFT)
+"""Fine‑tune CD‑GPT with **rsLoRA + Gated Adapter** (Hybrid‑PEFT)
 ================================================================
-This版本将原 Lightning 训练脚本升级为调用
-`hybrid_peft_modules.apply_hybrid_peft()`，并用
-`get_peft_param_groups()` 分离 LoRA/Adapter 的学习率。
-
-• 依赖：`pip install pytorch-lightning scikit-learn sentencepiece`
-• 运行：`python train_cd_gpt_peft.py --data_dir data/ --checkpoint_dir ckpt/`
+This version upgrades the original Lightning training script to call
+`hybrid_peft_modules.apply_hybrid_peft()`, and uses
+`get_peft_param_groups()` to separate the learning rates of LoRA/Adapter.
 """
 
 from __future__ import annotations
@@ -35,12 +32,11 @@ from model.hybrid_peft_modules import apply_hybrid_peft, get_peft_param_groups
 # LightningModule
 # -----------------------------------------------------------------------------
 class CDGPTLightningModule(pl.LightningModule):
-    def __init__(self, cfg):
+    def __init__(self, cfg, has_ckpt=False):
         super().__init__()
         self.cfg = cfg
 
-        # 1️⃣ 构建 backbone 并加载预训练权重 (全部冻结)
-        state = torch.load(cfg.model_path, map_location="cpu")['model']
+        # Build backbone and load pretrained weights (all frozen)
         self.model = CDGPT(vocab_size=cfg.tokenizer.vocab_size,
             max_len=cfg.model.max_len,
             embedding_dim=cfg.model.num_hiddens,
@@ -50,17 +46,19 @@ class CDGPTLightningModule(pl.LightningModule):
             eps=cfg.model.eps,
             include_head=False
         )
-        self.model.load_state_dict(state, strict=False)
+        if not has_ckpt:
+            state = torch.load(cfg.model_path, map_location="cpu")['model']
+            self.model.load_state_dict(state, strict=False)
 
-        # 2️⃣ 注入 rsLoRA + Gated Adapter（仅这些参数可训练）
+        # Inject rsLoRA + Gated Adapter (only these parameters are trainable)
         apply_hybrid_peft(self.model, rank=cfg.peft_rank)
 
-        # 3️⃣ 任务输出头 & 损失
+        # Task output head & loss
         self.prediction_head = CDGPTSequenceTaskHead()
         self.criterion = torch.nn.MSELoss()
         self.save_hyperparameters()
 
-        # 临时缓存验证输出
+        # Temporary validation output cache
         self._eval_buffer: list[dict[str, torch.Tensor]] = []
 
     # ---------------------------------------------------------- forward & steps
@@ -104,13 +102,13 @@ class CDGPTLightningModule(pl.LightningModule):
 
     # -------------------------------------------------------------- optimizers
     def configure_optimizers(self):
-        # LoRA vs Adapter 不同学习率
+        # Different learning rates for LoRA vs Adapter
         param_groups = get_peft_param_groups(self.model,
                                              lr_lora=self.cfg.lr_lora,
                                              lr_adapter=self.cfg.lr_adapter)
         optim = torch.optim.AdamW(param_groups)
 
-        # 线性 warm‑up → ReduceLROnPlateau
+        # Linear warm‑up → ReduceLROnPlateau
         sched_warmup = torch.optim.lr_scheduler.LinearLR(optim, start_factor=0.1,
                                                          total_iters=100)
         sched_plateau = torch.optim.lr_scheduler.ReduceLROnPlateau(
@@ -148,7 +146,7 @@ def get_adaptive_batch_size(model_size='1b', memory_factor=1):
         return 32
     gpu = torch.cuda.get_device_properties(torch.cuda.current_device())
     mem_gb = gpu.total_memory / 2**30
-    # 粗略映射 (以 1 B 为基准)：
+    # Rough mapping (using 1B as baseline):
     ranges = {(0, 24): 256, (24, 32): 384, (32, 48): 512, (48, 64): 768,
               (64, 96): 1024, (96, float('inf')): 1536}
     factors = {'small': 4, 'base': 2, '1b': 1, '7b': 0.15}
@@ -176,6 +174,7 @@ def parse_args():
     p.add_argument('--peft_rank', type=int, default=16)
     p.add_argument('--lr_lora', type=float, default=1e-4)
     p.add_argument('--lr_adapter', type=float, default=2e-5)
+    p.add_argument('--resume_ckpt', type=str, default=None)
     return p.parse_args()
 
 # -----------------------------------------------------------------------------
@@ -190,7 +189,7 @@ def main():
     cfg = get_config()
     cfg.tokenizer.path = os.path.join(args.checkpoint_dir, 'tokenizer.model')
     cfg.model_path = os.path.join(args.checkpoint_dir, f'CD-GPT-{args.model_size}.pth')
-    cfg.learning_rate = None  # 不再用统一 LR
+    cfg.learning_rate = None  # No longer using unified LR
     cfg.peft_rank = args.peft_rank
     cfg.lr_lora, cfg.lr_adapter = args.lr_lora, args.lr_adapter
 
@@ -212,7 +211,7 @@ def main():
                              num_workers=args.num_workers, collate_fn=collate)
 
     # —— model & trainer ——
-    lit_model = CDGPTLightningModule(cfg)
+    lit_model = CDGPTLightningModule(cfg, has_ckpt=args.resume_ckpt is not None)
 
     callbacks = [
         pl.callbacks.ModelCheckpoint(dirpath=args.output_dir, monitor='val_r2',
@@ -232,7 +231,11 @@ def main():
         deterministic=True
     )
 
-    trainer.fit(lit_model, train_loader, val_loader)
+    if args.resume_ckpt:
+        trainer.fit(lit_model, train_loader, val_loader,
+                    ckpt_path=args.resume_ckpt)
+    else:
+        trainer.fit(lit_model, train_loader, val_loader)
     trainer.test(lit_model, test_loader)
 
 
