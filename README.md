@@ -30,6 +30,8 @@ project/
 │   └── tokenizer.model   # sentencepiece model
 ```
 
+In this project, we download both trainingset and the data needed for prediction from [DREAM5 challenge](https://www.synapse.org/Synapse:syn2887863/wiki/72185).
+
 ### 2.3  Single-GPU Training
 ```bash
 python finetune_CDGPT.py \
